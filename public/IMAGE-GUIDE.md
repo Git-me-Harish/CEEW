@@ -1,4 +1,28 @@
-# PashuMitra — Image placement guide
+# PashuMitra — Asset placement guide
+
+This guide covers both image assets and the YOLO model file.
+
+## YOLO Model (version4.pt) — REQUIRED for hybrid detection
+
+Place your trained YOLO model at:
+
+```
+/home/z/my-project/python-services/yolo-detector/models/version4.pt
+```
+
+Then restart the Python service:
+```bash
+cd /home/z/my-project/python-services/yolo-detector
+[ -f service.pid ] && kill $(cat service.pid) 2>/dev/null
+bash start.sh
+```
+
+See `python-services/yolo-detector/README.md` for full setup details.
+Until the model is placed, the Breed Classifier gracefully falls back to VLM-only mode.
+
+---
+
+## Image assets
 
 Place the following images in this `/public` directory to replace the
 gradient placeholders in the UI.

@@ -61,3 +61,43 @@ Stage Verification:
 - VLM analysis confirmed: deep blue + navy palette as intended, no rendering errors, professional aesthetic matching GoldenCrate reference, no emojis, sticky footer correct, mobile layout adapts properly
 - All 9 sections verified individually via screenshot + VLM analysis
 - All API endpoints tested (classify, chat, cattle, milk-log, forum)
+
+---
+Task ID: 2-yolo-hybrid
+Agent: Main (Super Z)
+Task: Integrate user's trained YOLO model (version4.pt) as primary detector with VLM as secondary refinement
+
+Work Log:
+- Installed ultralytics 8.4.92 + torch 2.13.0+cpu in /home/z/.venv (CPU-only build, no CUDA needed)
+- Created Python FastAPI micro-service at /home/z/my-project/python-services/yolo-detector/:
+  - main.py: FastAPI app with /health and /detect endpoints
+  - Loads version4.pt from ./models/ directory at startup
+  - /detect accepts image upload, runs YOLO inference, returns {primary, allDetections, annotatedImage, classesAvailable}
+  - Generates annotated JPEG (with bboxes drawn) as base64
+  - Graceful degradation: if model file missing, service starts in "degraded" mode and /detect returns 503
+- Created start.sh: bash launcher that uses /home/z/.venv/bin/python, runs service on port 8501 in background with PID file
+- Service started successfully in degraded mode (model not yet placed by user) — verified via curl http://localhost:8501/health
+- Updated Next.js /api/classify route to hybrid flow:
+  - Step 1: Call YOLO service (primary) with 25s timeout — falls back gracefully on 503/error
+  - Step 2: Call VLM (secondary) WITH yoloHint parameter so VLM can validate YOLO's prediction
+  - Step 3: Consensus scoring — if both agree, boost confidence; if disagree, pick higher confidence
+  - Returns unified HybridResult with primary source label ("yolo" | "vlm" | "consensus" | "none")
+- Created /api/yolo-health endpoint to proxy YOLO service status to the UI
+- Rewrote BreedClassifier.tsx UI to show hybrid results:
+  - Pipeline status banner at top showing YOLO (primary) and VLM (secondary) live status with colored dots
+  - Result panel shows: primary breed with source badge (Consensus/YOLO/VLM), confidence meter, YOLO+VLM confidence breakdown, YOLO annotated image overlay, all detections list, VLM notes, visual characteristics, breed profile
+  - "How the hybrid pipeline works" 3-step explainer card
+- Created comprehensive README.md at python-services/yolo-detector/ with setup instructions, architecture diagram, troubleshooting
+- Updated /public/IMAGE-GUIDE.md to also document YOLO model placement
+- Verified end-to-end:
+  - HTTP 200 on home page
+  - /api/yolo-health correctly reports modelLoaded: false when version4.pt absent
+  - /api/classify gracefully falls back to VLM-only mode and returns correct hybrid result shape
+  - Browser-verified: hybrid pipeline banner shows YOLO Offline (red dot) + VLM Online (green dot)
+  - Clean ESLint (0 errors/warnings)
+
+Stage Summary:
+- YOLO service running on port 8501 in degraded mode (awaiting version4.pt from user)
+- Hybrid classifier API operational — YOLO-first with VLM refinement, graceful fallback
+- UI clearly communicates pipeline status and shows both model outputs side-by-side
+- User just needs to drop version4.pt at python-services/yolo-detector/models/ and run `bash start.sh`

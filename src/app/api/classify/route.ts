@@ -5,7 +5,24 @@ import { breeds } from "@/data/breeds";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-interface ClassificationResult {
+interface YoloDetection {
+  class: string;
+  classId: number;
+  confidence: number;
+  bbox: number[];
+}
+
+interface YoloResponse {
+  success: boolean;
+  primary: YoloDetection | null;
+  allDetections: YoloDetection[];
+  annotatedImage: string | null;
+  modelLoaded: boolean;
+  classesAvailable: string[];
+  thresholds: { conf: number; iou: number };
+}
+
+interface VlmResult {
   breed: string;
   breedId: string | null;
   confidence: number;
@@ -13,19 +30,110 @@ interface ClassificationResult {
   notes: string;
 }
 
-// Result is always returned, even on partial failure
-async function classifyImage(base64Image: string): Promise<ClassificationResult> {
+interface HybridResult {
+  primary: {
+    source: "yolo" | "vlm" | "consensus" | "none";
+    breed: string;
+    breedId: string | null;
+    confidence: number;
+    yoloConfidence?: number;
+    vlmConfidence?: number;
+  };
+  vlmResult: VlmResult;
+  yoloResult: {
+    available: boolean;
+    primary: YoloDetection | null;
+    allDetections: YoloDetection[];
+    annotatedImage: string | null;
+    classesAvailable: string[];
+  };
+  agreement: boolean;
+  characteristics: string[];
+  notes: string;
+  breedInfo: ReturnType<typeof getBreedInfo> | null;
+}
+
+function getBreedInfo(name: string | null) {
+  if (!name) return null;
+  const matched = breeds.find(
+    (b) =>
+      b.name.toLowerCase() === name.toLowerCase() ||
+      b.name.toLowerCase().includes(name.toLowerCase()) ||
+      name.toLowerCase().includes(b.name.toLowerCase())
+  );
+  if (!matched) return null;
+  return {
+    id: matched.id,
+    name: matched.name,
+    type: matched.type,
+    category: matched.category,
+    origin: matched.origin,
+    milkYieldKgPerLactation: matched.milkYieldKgPerLactation,
+    fatContent: matched.fatContent,
+    description: matched.description,
+    distinguishingFeatures: matched.distinguishingFeatures,
+    heatTolerance: matched.heatTolerance,
+    diseaseResistance: matched.diseaseResistance,
+  };
+}
+
+// --- YOLO call --------------------------------------------------------------
+const YOLO_URL = process.env.YOLO_URL || "http://localhost:8501";
+
+async function callYolo(buffer: Buffer, mimeType: string): Promise<YoloResponse | null> {
+  try {
+    const formData = new FormData();
+    const blob = new Blob([buffer], { type: mimeType });
+    formData.append("image", blob, "upload.jpg");
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
+
+    const res = await fetch(`${YOLO_URL}/detect?conf=0.25&iou=0.45`, {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (res.status === 503) {
+      // Model not loaded — graceful fallback
+      console.log("[classify] YOLO service returned 503 — model not loaded");
+      return null;
+    }
+    if (!res.ok) {
+      console.warn(`[classify] YOLO service returned ${res.status}`);
+      return null;
+    }
+    return (await res.json()) as YoloResponse;
+  } catch (err) {
+    console.warn(
+      "[classify] YOLO service unreachable:",
+      err instanceof Error ? err.message : "unknown error"
+    );
+    return null;
+  }
+}
+
+// --- VLM call (secondary refinement) ----------------------------------------
+async function callVlm(base64Image: string, yoloHint?: string): Promise<VlmResult> {
   const zai = await ZAI.create();
 
   const breedNames = breeds.map((b) => b.name).join(", ");
+  const hintClause = yoloHint
+    ? `A YOLO detection model has preliminarily identified this as "${yoloHint}". Verify this prediction against the visual features. If you strongly disagree (clearly different visual features), say so.`
+    : "";
+
   const prompt = `You are an expert bovine classifier specialised in Indian cattle and buffalo breeds. Look at this image carefully and identify the breed from this list (or indicate if not in list): ${breedNames}
+
+${hintClause}
 
 Return a STRICT JSON response with this exact schema:
 {
   "breed": "exact breed name from list or 'Unknown'",
-  "confidence": 0-100 integer,
+  "confidence": 0-100 integer (your confidence in this identification),
   "characteristics": ["3-4 visual features you observed"],
-  "notes": "1-sentence explanation of identification rationale. If not a bovine, say so."
+  "notes": "1-sentence explanation of identification rationale. If not a bovine, say so. If you agree/disagree with any YOLO hint, mention it briefly."
 }
 
 Rules:
@@ -48,28 +156,25 @@ Rules:
   });
 
   const content = response.choices[0]?.message?.content || "";
-
-  // Extract JSON from response
-  let jsonMatch = content.match(/\{[\s\S]*\}/);
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     return {
       breed: "Unknown",
       breedId: null,
       confidence: 0,
       characteristics: [],
-      notes: "Unable to parse model output. Please try a clearer image.",
+      notes: "Unable to parse VLM output.",
     };
   }
-
   try {
     const parsed = JSON.parse(jsonMatch[0]);
     const breedName = (parsed.breed || "Unknown").toString();
-    const matchedBreed = breeds.find(
+    const matched = breeds.find(
       (b) => b.name.toLowerCase() === breedName.toLowerCase()
     );
     return {
       breed: breedName,
-      breedId: matchedBreed?.id ?? null,
+      breedId: matched?.id ?? null,
       confidence: Math.min(100, Math.max(0, parseInt(parsed.confidence, 10) || 0)),
       characteristics: Array.isArray(parsed.characteristics)
         ? parsed.characteristics.slice(0, 5).map(String)
@@ -82,11 +187,12 @@ Rules:
       breedId: null,
       confidence: 0,
       characteristics: [],
-      notes: "Unable to parse classification result.",
+      notes: "Unable to parse VLM classification result.",
     };
   }
 }
 
+// --- Main hybrid handler ----------------------------------------------------
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -98,14 +204,12 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-
     if (!file.type.startsWith("image/")) {
       return NextResponse.json(
         { error: "Uploaded file is not an image." },
         { status: 400 }
       );
     }
-
     if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json(
         { error: "Image too large. Maximum allowed size is 10 MB." },
@@ -117,31 +221,99 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
     const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
-    const result = await classifyImage(base64);
+    // --- Step 1: YOLO (primary) ---
+    const yoloResult = await callYolo(buffer, file.type);
 
-    // Enrich with breed info if matched
-    const breedInfo = result.breedId
-      ? breeds.find((b) => b.id === result.breedId)
-      : null;
+    // --- Step 2: VLM (secondary refinement, with YOLO hint if available) ---
+    const vlmResult = await callVlm(base64, yoloResult?.primary?.class);
 
-    return NextResponse.json({
-      ...result,
-      breedInfo: breedInfo
-        ? {
-            id: breedInfo.id,
-            name: breedInfo.name,
-            type: breedInfo.type,
-            category: breedInfo.category,
-            origin: breedInfo.origin,
-            milkYieldKgPerLactation: breedInfo.milkYieldKgPerLactation,
-            fatContent: breedInfo.fatContent,
-            description: breedInfo.description,
-            distinguishingFeatures: breedInfo.distinguishingFeatures,
-            heatTolerance: breedInfo.heatTolerance,
-            diseaseResistance: breedInfo.diseaseResistance,
-          }
-        : null,
-    });
+    // --- Step 3: Combine into final result ---
+    const yoloBreed = yoloResult?.primary?.class ?? null;
+    const yoloConf = yoloResult?.primary?.confidence ?? 0;
+    const vlmBreed = vlmResult.breed;
+    const vlmConf = vlmResult.confidence;
+
+    let primarySource: "yolo" | "vlm" | "consensus" | "none" = "none";
+    let primaryBreed = "Unknown";
+    let primaryBreedId: string | null = null;
+    let primaryConfidence = 0;
+
+    if (yoloBreed && vlmBreed && vlmBreed !== "Unknown") {
+      // Both available — check agreement
+      const normalise = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+      const agreement =
+        normalise(yoloBreed) === normalise(vlmBreed) ||
+        normalise(yoloBreed).includes(normalise(vlmBreed)) ||
+        normalise(vlmBreed).includes(normalise(yoloBreed));
+
+      if (agreement) {
+        // Consensus — highest confidence
+        primarySource = "consensus";
+        primaryBreed = vlmBreed; // VLM name is more precise (matches our breed DB)
+        primaryBreedId = vlmResult.breedId;
+        primaryConfidence = Math.min(100, Math.round((yoloConf * 100 + vlmConf) / 2 + 10)); // boost for consensus
+      } else {
+        // Disagreement — pick higher confidence
+        if (yoloConf * 100 >= vlmConf) {
+          primarySource = "yolo";
+          primaryBreed = yoloBreed;
+          primaryBreedId = getBreedInfo(yoloBreed)?.id ?? null;
+          primaryConfidence = Math.round(yoloConf * 100);
+        } else {
+          primarySource = "vlm";
+          primaryBreed = vlmBreed;
+          primaryBreedId = vlmResult.breedId;
+          primaryConfidence = vlmConf;
+        }
+      }
+    } else if (yoloBreed) {
+      // Only YOLO detected something
+      primarySource = "yolo";
+      primaryBreed = yoloBreed;
+      primaryBreedId = getBreedInfo(yoloBreed)?.id ?? null;
+      primaryConfidence = Math.round(yoloConf * 100);
+    } else if (vlmBreed && vlmBreed !== "Unknown") {
+      // Only VLM identified (YOLO unavailable or didn't detect)
+      primarySource = "vlm";
+      primaryBreed = vlmBreed;
+      primaryBreedId = vlmResult.breedId;
+      primaryConfidence = vlmConf;
+    }
+
+    const agreement =
+      yoloBreed && vlmBreed && vlmBreed !== "Unknown"
+        ? (() => {
+            const n = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "");
+            return n(yoloBreed) === n(vlmBreed) || n(yoloBreed).includes(n(vlmBreed)) || n(vlmBreed).includes(n(yoloBreed));
+          })()
+        : false;
+
+    const breedInfo = getBreedInfo(primaryBreed);
+
+    const result: HybridResult = {
+      primary: {
+        source: primarySource,
+        breed: primaryBreed,
+        breedId: primaryBreedId,
+        confidence: primaryConfidence,
+        yoloConfidence: yoloBreed ? Math.round(yoloConf * 100) : undefined,
+        vlmConfidence: vlmBreed !== "Unknown" ? vlmConf : undefined,
+      },
+      vlmResult,
+      yoloResult: {
+        available: yoloResult?.modelLoaded ?? false,
+        primary: yoloResult?.primary ?? null,
+        allDetections: yoloResult?.allDetections ?? [],
+        annotatedImage: yoloResult?.annotatedImage ?? null,
+        classesAvailable: yoloResult?.classesAvailable ?? [],
+      },
+      agreement,
+      characteristics: vlmResult.characteristics,
+      notes: vlmResult.notes,
+      breedInfo,
+    };
+
+    return NextResponse.json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("Classification API error:", message);

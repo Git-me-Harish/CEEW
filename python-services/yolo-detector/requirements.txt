@@ -1,0 +1,11 @@
+# PashuMitra YOLO Detector — Python service dependencies
+# Pinned for reproducibility
+
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+pillow==11.0.0
+ultralytics==8.4.92
+# Torch CPU build (smaller download, no CUDA needed)
+# Install separately:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
