@@ -1,0 +1,89 @@
+// Prisma schema for PashuMitra bovine management platform
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Cattle/buffalo profile registered by a farmer
+model Cattle {
+  id            String   @id @default(cuid())
+  tagNumber     String   @unique
+  name          String
+  breed         String
+  species       String // "cattle" or "buffalo"
+  sex           String // "male" | "female"
+  birthDate     DateTime
+  weightKg      Float
+  source        String? // purchased, born on farm, etc.
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  milkLogs      MilkLog[]
+  healthRecords HealthRecord[]
+}
+
+// Daily milk production log
+model MilkLog {
+  id           String   @id @default(cuid())
+  cattleId     String
+  date         DateTime
+  morningKg    Float
+  eveningKg    Float
+  fatPct       Float?
+  snfPct       Float?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  cattle       Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+
+  @@index([cattleId, date])
+}
+
+// Health event record (vaccination, treatment, calving, AI, etc.)
+model HealthRecord {
+  id          String   @id @default(cuid())
+  cattleId    String
+  date        DateTime
+  type        String // vaccination, treatment, ai, calving, deworming, etc.
+  event       String
+  description String?
+  cost        Float?
+  createdAt   DateTime @default(now())
+
+  cattle      Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+
+  @@index([cattleId, date])
+}
+
+// Community forum thread
+model ForumPost {
+  id         String   @id @default(cuid())
+  authorName String
+  authorRole String // farmer, vet, expert, etc.
+  topic      String
+  breedTag   String?
+  body       String
+  upvotes    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  replies    ForumReply[]
+}
+
+model ForumReply {
+  id         String   @id @default(cuid())
+  postId     String
+  authorName String
+  authorRole String
+  body       String
+  createdAt  DateTime @default(now())
+
+  post       ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
