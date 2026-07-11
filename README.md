@@ -1,4 +1,4 @@
-# PashuMitra — Indian Bovine Intelligence Platform
+# PashuMitra Indian Bovine Intelligence Platform
 
 > A one-stop, end-to-end platform for Indian cattle and buffalo management — built for farmers, dairies, and veterinarians across India.
 
