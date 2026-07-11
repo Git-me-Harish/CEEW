@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import ZAI from "z-ai-web-dev-sdk";
+import fs from "fs/promises";
+import path from "path";
+import os from "os";
 import { breeds } from "@/data/breeds";
 import { diseases } from "@/data/health";
 import { govtSchemes } from "@/data/schemes";
@@ -7,7 +9,57 @@ import { govtSchemes } from "@/data/schemes";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-// Build a compact context string of bovine knowledge
+// --- Z.ai config loading (mirrors the SDK's loadConfig) --------------------
+interface ZaiConfig {
+  baseUrl: string;
+  apiKey: string;
+  token?: string;
+  chatId?: string;
+  userId?: string;
+}
+
+async function loadZaiConfig(): Promise<ZaiConfig> {
+  const homeDir = os.homedir();
+  const configPaths = [
+    path.join(process.cwd(), ".z-ai-config"),
+    path.join(homeDir, ".z-ai-config"),
+    "/etc/.z-ai-config",
+  ];
+  for (const filePath of configPaths) {
+    try {
+      const configStr = await fs.readFile(filePath, "utf-8");
+      const config = JSON.parse(configStr);
+      if (config.baseUrl && config.apiKey) {
+        return {
+          baseUrl: config.baseUrl,
+          apiKey: config.apiKey,
+          token: config.token,
+          chatId: config.chatId,
+          userId: config.userId,
+        };
+      }
+    } catch {
+      // continue to next path
+    }
+  }
+  throw new Error(
+    "Z.ai configuration not found. Create a .z-ai-config file with { \"apiKey\": \"...\", \"baseUrl\": \"https://api.z.ai/api/paas/v4\" } in the project root."
+  );
+}
+
+function buildHeaders(config: ZaiConfig): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${config.apiKey}`,
+    "X-Z-AI-From": "Z",
+  };
+  if (config.chatId) headers["X-Chat-Id"] = config.chatId;
+  if (config.userId) headers["X-User-Id"] = config.userId;
+  if (config.token) headers["X-Token"] = config.token;
+  return headers;
+}
+
+// --- Build knowledge context ------------------------------------------------
 function buildContext(): string {
   const breedList = breeds
     .map(
@@ -26,10 +78,7 @@ function buildContext(): string {
     .join("\n");
 
   const schemeList = govtSchemes
-    .map(
-      (s) =>
-        `- ${s.name} (${s.category}, ${s.subsidyPct}): ${s.summary}`
-    )
+    .map((s) => `- ${s.name} (${s.category}, ${s.subsidyPct}): ${s.summary}`)
     .join("\n");
 
   return `INDIAN BOVINE KNOWLEDGE BASE
@@ -72,7 +121,7 @@ GUIDELINES:
 - Reference specific Indian breeds (Gir, Sahiwal, Murrah, etc.) and Indian conditions
 - For disease symptoms, always recommend consulting a veterinarian for diagnosis
 - For treatments, mention both modern veterinary medicine and traditional practices where appropriate
-- Mention costs in Indian Rupees (₹) when relevant
+- Mention costs in Indian Rupees when relevant
 - Reference Indian government schemes, NDDB, NDRI, ICAR, state AH departments
 - Be concise but thorough — give complete, usable answers
 - If you don't know something, admit it and suggest contacting local veterinary officer
@@ -80,6 +129,7 @@ GUIDELINES:
 
 ${buildContext()}`;
 
+// --- Main handler (direct fetch to Z.ai public API) ------------------------
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -92,27 +142,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const zai = await ZAI.create();
+    const config = await loadZaiConfig();
+    const url = `${config.baseUrl}/chat/completions`;
 
-    // Build conversation history
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    const messages: Array<{ role: string; content: string }> = [
       { role: "system", content: SYSTEM_PROMPT },
       ...history.slice(-6).map((h: { role: string; content: string }) => ({
-        role: h.role === "user" ? ("user" as const) : ("assistant" as const),
+        role: h.role === "user" ? "user" : "assistant",
         content: h.content,
       })),
       { role: "user", content: message },
     ];
 
-    const response = await zai.chat.completions.create({
+    const requestBody = {
+      model: "glm-4.6",
       messages,
       temperature: 0.7,
       max_tokens: 1024,
       thinking: { type: "disabled" },
+    };
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: buildHeaders(config),
+      body: JSON.stringify(requestBody),
     });
 
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`Z.ai chat API failed (${res.status}): ${errBody}`);
+    }
+
+    const data = await res.json();
     const reply =
-      response.choices[0]?.message?.content ||
+      data.choices?.[0]?.message?.content ||
       "I'm sorry, I couldn't generate a response. Please rephrase your question.";
 
     return NextResponse.json({

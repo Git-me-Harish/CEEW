@@ -50,5 +50,14 @@ test
 prompt
 
 server.log
+# Local Python environments and generated Python artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pid
+
+# Local Next.js launcher output
+next-local.log
 # Skills directory
 /skills/

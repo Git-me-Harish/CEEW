@@ -1,1 +1,0 @@
-Place version4.pt in this directory

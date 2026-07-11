@@ -17,7 +17,7 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
-  title: "PashuMitra — Indian Bovine Intelligence Platform",
+  title: "PashuMitra Indian Bovine Intelligence Platform",
   description:
     "One-stop platform for Indian cattle & bovine management: AI breed classification, breed encyclopedia, health & vaccination, nutrition, milk tracking, mandi prices, and government schemes for farmers.",
   keywords: [

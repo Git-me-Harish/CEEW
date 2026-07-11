@@ -35,7 +35,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Model loading ----------------------------------------------------------
+# Model loading
 yolo_model = None
 model_names: dict = {}
 model_load_error: Optional[str] = None
@@ -67,7 +67,7 @@ def load_model() -> None:
 load_model()
 
 
-# --- Routes -----------------------------------------------------------------
+# Routes
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool

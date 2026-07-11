@@ -21,6 +21,10 @@ interface HybridResult {
     characteristics: string[];
     notes: string;
   };
+  vlmStatus: {
+    available: boolean;
+    error: string | null;
+  };
   yoloResult: {
     available: boolean;
     primary: { class: string; classId: number; confidence: number; bbox: number[] } | null;
@@ -423,13 +427,28 @@ export function BreedClassifier() {
                   </div>
                 )}
 
-                {/* VLM notes */}
-                {result.notes && (
-                  <div className="text-sm text-slate-700 leading-relaxed p-3 rounded-md bg-slate-50 border border-brand-line">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1 flex items-center gap-1">
-                      <Eye className="h-3 w-3" /> VLM Analysis
+                {/* VLM notes / VLM unavailable notice */}
+                {result.vlmStatus.available ? (
+                  result.notes && (
+                    <div className="text-sm text-slate-700 leading-relaxed p-3 rounded-md bg-slate-50 border border-brand-line">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1 flex items-center gap-1">
+                        <Eye className="h-3 w-3" /> VLM Analysis
+                      </div>
+                      {result.notes}
                     </div>
-                    {result.notes}
+                  )
+                ) : (
+                  <div className="text-xs text-amber-800 leading-relaxed p-3 rounded-md bg-amber-50 border border-amber-200">
+                    <div className="font-semibold mb-1 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5" /> VLM refinement unavailable
+                    </div>
+                    <p>
+                      The vision-language model couldn't be reached, so this result is from{" "}
+                      <strong>YOLO only</strong>. This is usually due to insufficient Z.ai API balance
+                      or a missing/invalid API key. The YOLO detection above is still fully valid —
+                      recharge at <a href="https://z.ai/manage-apikey" target="_blank" rel="noopener noreferrer" className="underline font-medium">z.ai/manage-apikey</a>{" "}
+                      to enable VLM refinement and consensus scoring.
+                    </p>
                   </div>
                 )}
 
