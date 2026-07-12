@@ -197,53 +197,29 @@ flowchart TB
     style Data fill:#F4ECDF,stroke:#B5651D
 ```
 
-### Hybrid Classification Flow (Detailed)
+### Hybrid Classification Flow
+
+The classifier runs YOLO first, then optionally refines with the VLM. If the VLM is unavailable, the result is returned YOLO-only — no failure.
 
 ```mermaid
 sequenceDiagram
-    participant User as Browser
-    participant Next as Next.js /api/classify
-    participant YOLO as Python YOLO Service
-    participant VLM as Z.ai Vision API
-    participant DB as Breed Database
+    participant U as Browser
+    participant N as Next.js
+    participant Y as YOLO Service
+    participant V as Z.ai Vision API
 
-    User->>Next: POST /api/classify (image file)
-    Next->>Next: Validate file + convert to base64
-    
-    par Step 1: YOLO Primary Detection
-        Next->>YOLO: POST /detect (image, conf=0.25, iou=0.45)
-        YOLO->>YOLO: Load version4.pt
-        YOLO->>YOLO: Run inference (CPU)
-        YOLO-->>Next: { primary, allDetections, annotatedImage }
-    end
-    
-    par Step 2: VLM Secondary Refinement (best-effort)
-        Next->>VLM: POST /chat/completions/vision (image + YOLO hint)
-        alt VLM endpoint exists (internal API)
-            VLM-->>Next: { breed, confidence, characteristics }
-        else VLM endpoint 404 (public API)
-            Next->>VLM: POST /chat/completions (multimodal content)
-            VLM-->>Next: { breed, confidence, characteristics }
-        end
-        alt VLM failed (429/401/network)
-            VLM--xNext: { ok: false, error }
-            Note over Next: Graceful degradation<br/>proceed with YOLO only
-        end
-    end
-    
-    Next->>Next: Step 3: Consensus scoring
-    alt Both models agree
-        Next->>DB: Lookup breed info
-        DB-->>Next: Full breed profile
-        Next-->>User: { source: "consensus", confidence: boosted }
-    else Models disagree
-        Next->>DB: Lookup higher-confidence breed
-        DB-->>Next: Breed profile
-        Next-->>User: { source: "yolo" | "vlm", confidence: higher }
-    else Only YOLO succeeded
-        Next->>DB: Lookup YOLO breed
-        DB-->>Next: Breed profile
-        Next-->>User: { source: "yolo", vlmStatus: { available: false } }
+    U->>N: Upload image
+    N->>Y: POST /detect
+    Y-->>N: Breed + confidence + annotated image
+
+    N->>V: POST /chat/completions (image + YOLO hint)
+    alt VLM succeeds
+        V-->>N: Breed + confidence + characteristics
+        N->>N: Consensus scoring
+        N-->>U: Result with consensus badge
+    else VLM fails (429, 401, network)
+        V--xN: Error
+        N-->>U: YOLO-only result with notice
     end
 ```
 
