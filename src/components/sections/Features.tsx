@@ -21,7 +21,7 @@ export function Features({ onNavigate }: FeaturesProps) {
       icon: Database,
       title: "Comprehensive Breed Library",
       description:
-        "Full profiles of 26 indigenous cattle, 4 buffalo breeds, and 6 exotic breeds used in Indian crossbreeding — including origin, milk yield, fat content, and conservation status.",
+        "Full profiles of 26 indigenous cattle, 4 buffalo breeds, and 6 exotic breeds used in Indian crossbreeding including origin, milk yield, fat content, and conservation status.",
       number: "02",
       tab: "encyclopedia" as const,
     },
@@ -53,7 +53,7 @@ export function Features({ onNavigate }: FeaturesProps) {
       icon: Users,
       title: "Government Schemes Directory",
       description:
-        "10 central government schemes — Rashtriya Gokul Mission, Pashu KCC, Pashu Bima, AHIDF, DEDS — with eligibility, subsidies, documents, and application process.",
+        "10 central government schemes Rashtriya Gokul Mission, Pashu KCC, Pashu Bima, AHIDF, DEDS with eligibility, subsidies, documents, and application process.",
       number: "06",
       tab: null,
     },
@@ -63,7 +63,7 @@ export function Features({ onNavigate }: FeaturesProps) {
     <Section bg="white">
       <SectionHeading
         eyebrow="Why PashuMitra"
-        title="Everything Indian cattle rearers need — in one place"
+        title="Everything Indian cattle rearers need in one place"
         subtitle="Built specifically for Indian bovine species, breeds, and farming conditions. No more juggling 10 different apps, WhatsApp groups, and PDFs."
         align="center"
       />

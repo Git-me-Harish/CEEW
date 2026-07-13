@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { getSession, canManageContent } from "@/lib/auth";
+import { Role } from "@prisma/client";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const cattleId = searchParams.get("cattleId");
 
-    const where: { cattleId?: string } = {};
+    const where: { cattleId?: string; cattle?: { ownerId?: string } } = {};
     if (cattleId) where.cattleId = cattleId;
+    if (!canManageContent(session.role as Role)) {
+      where.cattle = { ownerId: session.id };
+    }
 
     const records = await db.healthRecord.findMany({
       where,
@@ -25,6 +35,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const body = await req.json();
     const { cattleId, date, type, event, description, cost } = body;
 
@@ -35,9 +50,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cattle = await db.cattle.findUnique({ where: { id: cattleId } });
+    if (!cattle) {
+      return NextResponse.json({ error: "Cattle not found." }, { status: 404 });
+    }
+    if (cattle.ownerId !== session.id && !canManageContent(session.role as Role)) {
+      return NextResponse.json({ error: "Forbidden: not your cattle." }, { status: 403 });
+    }
+
     const record = await db.healthRecord.create({
       data: {
         cattleId,
+        recordedById: session.id,
         date: date ? new Date(date) : new Date(),
         type,
         event,

@@ -815,9 +815,9 @@ Proxy to the Python YOLO service's `/health` endpoint.
 
 ```mermaid
 erDiagram
-    Cattle ||--o{ MilkLog : has
-    Cattle ||--o{ HealthRecord : has
-    ForumPost ||--o{ ForumReply : has
+    Cattle ||--o MilkLog : has
+    Cattle ||--o HealthRecord : has
+    ForumPost ||--o ForumReply : has
 
     Cattle {
         string id PK
