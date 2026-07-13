@@ -106,7 +106,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       <SectionHeading
         eyebrow="Farmer Dashboard"
         title="Your operation at a glance"
-        subtitle="Quick access to everything you need to manage your cattle or buffalo scientifically — herd status, quick actions, today's advisory, and market snapshot."
+        subtitle="Quick access to everything you need to manage your cattle or buffalo scientifically herd status, quick actions, today's advisory, and market snapshot."
       />
 
       {/* Stats row */}

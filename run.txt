@@ -36,10 +36,25 @@ Stop the server with Ctrl+C in the PowerShell window.
 Database notes
 --------------
 - The project includes demo data in db/custom.db.
-- The checked-in .env contains an original Linux database path. For Windows,
-  use the DATABASE_URL command above before running Prisma or Next.js.
+- `.env` uses a portable SQLite path: `file:../db/custom.db`.
 - Database APIs (animals, milk logs, health records, and forum) use this SQLite
   file. Do not delete it unless you intentionally want to reset local data.
+
+Database workflow after backend/schema changes
+----------------------------------------------
+After pulling schema changes, update the local database without deleting your
+data:
+
+   npm run db:sync
+
+`db:sync` applies the current Prisma schema and regenerates Prisma Client. If
+the schema change is incompatible with existing local data, back up the data
+first and rebuild the demo database:
+
+   npm run db:reset-and-seed
+
+Warning: `db:reset-and-seed` deletes the active local database contents, then
+creates the current tables and demo data. It is for development only.
 
 Optional: YOLO breed-detector service
 -------------------------------------

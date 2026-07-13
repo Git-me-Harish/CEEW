@@ -59,5 +59,14 @@ __pycache__/
 
 # Local Next.js launcher output
 next-local.log
+
+# Local SQLite snapshots created before destructive development resets
+/db/*.backup.db
 # Skills directory
 /skills/
+
+# Local SQLite database files
+/db/*.db
+
+# Keep the shareable environment template
+!.env.example

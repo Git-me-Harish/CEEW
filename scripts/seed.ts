@@ -1,12 +1,63 @@
-// Seed script — populates the database with demo data for first-time visitors
+// Seed script — populates the database with demo users, cattle, tickets, and vaccination requests
+import bcrypt from "bcryptjs";
 import { db } from "../src/lib/db";
 
 async function main() {
   console.log("Seeding database...");
 
-  // Demo cattle
+  // ─── Users ─────────────────────────────────────────────
+  const passwordHash = await bcrypt.hash("demo123", 10);
+
+  const admin = await db.user.create({
+    data: {
+      email: "admin@demo.in",
+      name: "Platform Admin",
+      passwordHash,
+      role: "ADMIN",
+      phone: "+91 98765 43210",
+      location: "New Delhi, Delhi",
+    },
+  });
+
+  const vet = await db.user.create({
+    data: {
+      email: "vet@demo.in",
+      name: "Dr. Anjali Sharma",
+      passwordHash,
+      role: "VET",
+      phone: "+91 98765 12345",
+      location: "Anand, Gujarat",
+    },
+  });
+
+  const farmer1 = await db.user.create({
+    data: {
+      email: "farmer@demo.in",
+      name: "Rajesh Patel",
+      passwordHash,
+      role: "FARMER",
+      phone: "+91 98765 67890",
+      location: "Junagadh, Gujarat",
+    },
+  });
+
+  const farmer2 = await db.user.create({
+    data: {
+      email: "suresh@demo.in",
+      name: "Suresh Kumar",
+      passwordHash,
+      role: "FARMER",
+      phone: "+91 98765 11111",
+      location: "Rohtak, Haryana",
+    },
+  });
+
+  console.log(`Created 4 users: admin, vet, farmer1, farmer2`);
+
+  // ─── Cattle ────────────────────────────────────────────
   const cattle1 = await db.cattle.create({
     data: {
+      ownerId: farmer1.id,
       tagNumber: "IND-GIR-001",
       name: "Gauri",
       breed: "Gir",
@@ -21,6 +72,7 @@ async function main() {
 
   const cattle2 = await db.cattle.create({
     data: {
+      ownerId: farmer1.id,
       tagNumber: "IND-MUR-002",
       name: "Nandini",
       breed: "Murrah Buffalo",
@@ -35,19 +87,22 @@ async function main() {
 
   const cattle3 = await db.cattle.create({
     data: {
-      tagNumber: "IND-SAH-003",
-      name: "Sundari",
-      breed: "Sahiwal",
-      species: "cattle",
+      ownerId: farmer2.id,
+      tagNumber: "HR-MUR-001",
+      name: "Rohtak Rani",
+      breed: "Murrah Buffalo",
+      species: "buffalo",
       sex: "female",
-      birthDate: new Date("2021-11-03"),
-      weightKg: 360,
-      source: "AI from NDRI semen",
-      notes: "First calver, growing well",
+      birthDate: new Date("2018-06-10"),
+      weightKg: 620,
+      source: "Hisar cattle fair",
+      notes: "Champion bloodline — 22 L/day peak",
     },
   });
 
-  // Seed milk logs for the last 14 days
+  console.log(`Created 3 cattle`);
+
+  // ─── Milk logs (14 days × 2 cattle for farmer1) ────────
   const today = new Date();
   for (let i = 13; i >= 0; i--) {
     const date = new Date(today);
@@ -55,11 +110,11 @@ async function main() {
 
     const baseYield1 = 10 + Math.random() * 3;
     const baseYield2 = 16 + Math.random() * 4;
-    const baseYield3 = 6 + Math.random() * 2;
 
     await db.milkLog.create({
       data: {
         cattleId: cattle1.id,
+        recordedById: farmer1.id,
         date,
         morningKg: parseFloat((baseYield1 * 0.55).toFixed(1)),
         eveningKg: parseFloat((baseYield1 * 0.45).toFixed(1)),
@@ -70,28 +125,21 @@ async function main() {
     await db.milkLog.create({
       data: {
         cattleId: cattle2.id,
+        recordedById: farmer1.id,
         date,
         morningKg: parseFloat((baseYield2 * 0.5).toFixed(1)),
         eveningKg: parseFloat((baseYield2 * 0.5).toFixed(1)),
         fatPct: 7.5 + Math.random() * 0.5,
       },
     });
-
-    await db.milkLog.create({
-      data: {
-        cattleId: cattle3.id,
-        date,
-        morningKg: parseFloat((baseYield3 * 0.55).toFixed(1)),
-        eveningKg: parseFloat((baseYield3 * 0.45).toFixed(1)),
-        fatPct: 5.0 + Math.random() * 0.3,
-      },
-    });
   }
+  console.log(`Created 28 milk logs (14 days × 2 cattle)`);
 
-  // Health records
+  // ─── Health records ────────────────────────────────────
   await db.healthRecord.create({
     data: {
       cattleId: cattle1.id,
+      recordedById: vet.id,
       date: new Date("2025-09-15"),
       type: "vaccination",
       event: "FMD Trivalent Vaccine",
@@ -102,6 +150,7 @@ async function main() {
   await db.healthRecord.create({
     data: {
       cattleId: cattle2.id,
+      recordedById: vet.id,
       date: new Date("2025-09-15"),
       type: "vaccination",
       event: "FMD Trivalent Vaccine",
@@ -109,84 +158,148 @@ async function main() {
       cost: 50,
     },
   });
-  await db.healthRecord.create({
-    data: {
-      cattleId: cattle1.id,
-      date: new Date("2025-08-10"),
-      type: "deworming",
-      event: "Fenbendazole 7.5 g oral",
-      description: "Routine quarterly deworming.",
-      cost: 80,
-    },
-  });
-  await db.healthRecord.create({
-    data: {
-      cattleId: cattle2.id,
-      date: new Date("2025-05-20"),
-      type: "calving",
-      event: "Normal calving — male calf",
-      description: "Calving uneventful. Calf healthy, birth weight 35 kg.",
-    },
-  });
 
-  // Forum posts
-  const p1 = await db.forumPost.create({
+  // ─── Tickets (problems) ────────────────────────────────
+  const ticket1 = await db.ticket.create({
     data: {
-      authorName: "Rajesh Patel",
-      authorRole: "Dairy Farmer, Anand",
-      topic: "Best fodder mix for Gir cows in summer?",
+      authorId: farmer1.id,
+      title: "Gir cow's milk yield dropped 30% in summer — please advise",
+      body:
+        "My Gir cow Gauri (IND-GIR-001) was giving 11 L/day until March. Since mid-April she's down to 7-8 L/day. She's eating normally and shows no other symptoms. I'm in Junagadh where temperatures hit 42°C. Currently feeding maize fodder + wheat straw + 4 kg concentrate. Is this heat stress? Should I change the ration? Any supplements I should add?",
+      category: "nutrition",
+      priority: "HIGH",
       breedTag: "Gir",
-      body: "My Gir cow's yield drops by 30% in peak summer (May-June). Currently feeding maize fodder + wheat straw + 4 kg concentrate. Looking for advice on summer ration adjustments.",
-    },
-  });
-  await db.forumReply.create({
-    data: {
-      postId: p1.id,
-      authorName: "Dr. Anjali Sharma",
-      authorRole: "Veterinary Officer",
-      body: "Add 1 kg molasses to improve palatability and energy. Provide chilled drinking water (below 25°C) at least 4 times a day. Increase vitamin C to 5 g/day and add electrolytes. Consider subabul tree leaves as a drought-resistant protein source. Graze only between 5-9 AM and 5-7 PM.",
-    },
-  });
-  await db.forumReply.create({
-    data: {
-      postId: p1.id,
-      authorName: "Mahendra Singh",
-      authorRole: "Farmer, Mehsana",
-      body: "I plant cluster bean (guar) as summer fodder — it's drought-tolerant and high protein. Also use hydroponic barley sprouts (6-day growth) for 2 kg/day. Works well for my 8 Gir cows.",
+      cattleTag: "IND-GIR-001",
+      status: "IN_PROGRESS",
     },
   });
 
-  const p2 = await db.forumPost.create({
+  await db.ticketReply.create({
     data: {
-      authorName: "Lakshmi Devi",
-      authorRole: "Dairy Farmer, Chittoor",
-      topic: "Punganur calf rearing — slow growth",
-      breedTag: "Punganur",
-      body: "My Punganur heifer is 8 months old and weighs only 45 kg. Is this normal for the breed? What should I feed for better growth?",
-    },
-  });
-  await db.forumReply.create({
-    data: {
-      postId: p2.id,
-      authorName: "Dr. KV Raghavendra",
-      authorRole: "Veterinary University, Tirupati",
-      body: "Punganur is a dwarf breed so 45 kg at 8 months is within normal range (adult female 110-180 kg). Focus on balanced protein (16-18% CP) calf starter, good quality berseem/lucerne hay, and 30 g/day mineral mixture. Target average daily gain of 200-250 g. Don't compare with crossbred growth rates.",
+      ticketId: ticket1.id,
+      authorId: vet.id,
+      body:
+        "Rajesh ji, this is classic heat stress. Gir is heat-tolerant but 42°C with humidity will still drop yields by 25-30%. Here's what I recommend:\n\n1. Add 1 kg molasses to improve energy intake and palatability\n2. Provide chilled drinking water (below 25°C) at least 4 times a day — keep the tank in shade\n3. Increase vitamin C to 5 g/day and add electrolytes to water\n4. Graze only between 5-9 AM and 5-7 PM\n5. Consider Subabul tree leaves as a drought-resistant protein source\n\nYour ration is otherwise fine. Try these for 2 weeks and let me know the change. I'm marking this in-progress.",
+      internal: false,
     },
   });
 
-  const p3 = await db.forumPost.create({
+  const ticket2 = await db.ticket.create({
     data: {
-      authorName: "Suresh Kumar",
-      authorRole: "Progressive Farmer, Rohtak",
-      topic: "Murrah buffalo sold for Rs 1.2 crore at Hisar mela",
+      authorId: farmer2.id,
+      title: "Murrah buffalo — repeating breeding, not conceiving",
+      body:
+        "My Murrah buffalo Rohtak Rani has been bred 3 times via AI in the last 4 months but isn't conceiving. Semen quality from the centre is supposed to be good. She had a normal calving 8 months ago. Please advise on what to check.",
+      category: "breeding",
+      priority: "HIGH",
       breedTag: "Murrah Buffalo",
-      body: "Sharing that a Murrah buffalo from my village (Kheri Sadh, Rohtak) was sold for Rs 1.2 crore at the Hisar animal fair. Key traits: 28 L/day peak yield, 8.2% fat, udder conformation score 9/10. This shows the potential of purebred Murrah breeding when done scientifically.",
+      cattleTag: "HR-MUR-001",
+      status: "OPEN",
     },
   });
 
-  console.log("Seed completed!");
-  console.log(`Created cattle: ${cattle1.name}, ${cattle2.name}, ${cattle3.name}`);
-  console.log(`Forum posts: 3 with replies`);
+  const ticket3 = await db.ticket.create({
+    data: {
+      authorId: farmer1.id,
+      title: "Which government scheme covers Murrah buffalo purchase subsidy?",
+      body:
+        "I want to buy 2 more Murrah buffaloes to expand my herd. Are there any central or Gujarat state schemes that provide subsidy for buffalo purchase by small farmers?",
+      category: "market",
+      priority: "MEDIUM",
+      status: "RESOLVED",
+    },
+  });
+
+  await db.ticketReply.create({
+    data: {
+      ticketId: ticket3.id,
+      authorId: vet.id,
+      body:
+        "Yes — look into the Dairy Entrepreneurship Development Scheme (DEDS) operated by NABARD. It provides 25% back-ended subsidy (33.33% for SC/ST/women) on projects up to Rs 20 lakh for dairy farms. Also check the Pashu Kisan Credit Card for working capital at 4% effective interest. Visit your local NABARD office or apply through a commercial bank.",
+      internal: false,
+    },
+  });
+
+  console.log(`Created 3 tickets with replies`);
+
+  // ─── Vaccination requests ──────────────────────────────
+  await db.vaccinationRequest.create({
+    data: {
+      requesterId: farmer1.id,
+      cattleId: cattle1.id,
+      vaccineName: "FMD trivalent (O, A, Asia1) — Rakshafmd",
+      requestedDate: new Date(Date.now() + 7 * 86400000),
+      preferredTime: "Morning",
+      notes: "Six-monthly booster due. Cow is healthy, no current medications.",
+      status: "PENDING",
+    },
+  });
+
+  await db.vaccinationRequest.create({
+    data: {
+      requesterId: farmer1.id,
+      cattleId: cattle2.id,
+      vaccineName: "HS oil-adjuvant vaccine",
+      requestedDate: new Date(Date.now() + 14 * 86400000),
+      preferredTime: "Evening",
+      notes: "Pre-monsoon vaccination. Buffalo had mild reaction last time — please observe for 30 min after.",
+      status: "PENDING",
+    },
+  });
+
+  await db.vaccinationRequest.create({
+    data: {
+      requesterId: farmer2.id,
+      cattleId: cattle3.id,
+      vaccineName: "Brucella abortus strain 19",
+      requestedDate: new Date(Date.now() + 5 * 86400000),
+      notes: "Female calf 6 months old — first Brucellosis vaccination.",
+      status: "PENDING",
+    },
+  });
+
+  console.log(`Created 3 vaccination requests (all pending)`);
+
+  // ─── Notifications for vet ─────────────────────────────
+  await db.notification.createMany({
+    data: [
+      {
+        userId: vet.id,
+        type: "ticket_new",
+        title: "New ticket: Gir cow's milk yield dropped",
+        message: "Rajesh Patel posted a HIGH priority problem.",
+        link: "/tickets",
+      },
+      {
+        userId: vet.id,
+        type: "ticket_new",
+        title: "New ticket: Murrah buffalo repeating breeding",
+        message: "Suresh Kumar posted a HIGH priority problem.",
+        link: "/tickets",
+      },
+      {
+        userId: vet.id,
+        type: "vaccination_new",
+        title: "3 new vaccination requests",
+        message: "Farmers have requested vaccinations — review pending queue.",
+        link: "/vaccination-requests",
+      },
+      {
+        userId: admin.id,
+        type: "ticket_new",
+        title: "2 new tickets need attention",
+        message: "High priority problems posted by farmers.",
+        link: "/tickets",
+      },
+    ],
+  });
+
+  console.log(`Created notifications`);
+  console.log(`\nSeed completed!`);
+  console.log(`\nDemo login credentials:`);
+  console.log(`  Farmer: farmer@demo.in / demo123`);
+  console.log(`  Vet:    vet@demo.in / demo123`);
+  console.log(`  Admin:  admin@demo.in / demo123`);
 }
 
 main()

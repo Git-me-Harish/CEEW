@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Montserrat } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider } from "@/components/auth/AuthProvider";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "PashuMitra Team" }],
   openGraph: {
-    title: "PashuMitra — Indian Bovine Intelligence Platform",
+    title: "PashuMitra Indian Bovine Intelligence Platform",
     description:
       "AI-powered end-to-end platform for Indian cattle rearers, dairy farmers and veterinarians.",
     siteName: "PashuMitra",
@@ -51,8 +52,10 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${montserrat.variable} antialiased bg-background text-foreground font-sans`}
       >
-        {children}
-        <Toaster />
+        <AuthProvider>
+          {children}
+          <Toaster />
+        </AuthProvider>
       </body>
     </html>
   );

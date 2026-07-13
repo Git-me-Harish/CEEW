@@ -14,6 +14,11 @@ import { NutritionCalculator } from "@/components/sections/NutritionCalculator";
 import { MilkTracker } from "@/components/sections/MilkTracker";
 import { MarketAndSchemes } from "@/components/sections/MarketAndSchemes";
 import { FarmerForum } from "@/components/sections/FarmerForum";
+import { Profile } from "@/components/sections/Profile";
+import { Tickets } from "@/components/sections/Tickets";
+import { VaccinationRequests } from "@/components/sections/VaccinationRequests";
+import { ManagementDashboard } from "@/components/sections/ManagementDashboard";
+import { Settings } from "@/components/sections/Settings";
 
 export default function Home() {
   const [tab, setTab] = useState<TabId>("home");
@@ -95,6 +100,35 @@ export default function Home() {
         {tab === "milk" && <MilkTracker />}
         {tab === "market" && <MarketAndSchemes />}
         {tab === "forum" && <FarmerForum />}
+
+        {/* Auth-gated sections */}
+        {tab === "profile" && (
+          <Profile
+            onNavigate={(t) =>
+              setTab(
+                t === "tickets"
+                  ? "tickets"
+                  : t === "vaccination"
+                  ? "vaccination"
+                  : t === "management"
+                  ? "management"
+                  : t === "settings"
+                  ? "settings"
+                  : t === "dashboard"
+                  ? "dashboard"
+                  : "milk"
+              )
+            }
+          />
+        )}
+        {tab === "tickets" && <Tickets />}
+        {tab === "vaccination" && <VaccinationRequests />}
+        {tab === "settings" && <Settings />}
+        {tab === "management" && (
+          <ManagementDashboard
+            onNavigate={(t) => setTab(t === "tickets" ? "tickets" : "vaccination")}
+          />
+        )}
       </main>
 
       <Footer onNavigate={setTab} />

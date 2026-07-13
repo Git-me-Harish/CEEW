@@ -1,7 +1,8 @@
 import { Mail, Phone, MapPin, ArrowUpRight } from "lucide-react";
+import type { TabId } from "./Header";
 
 interface FooterProps {
-  onNavigate: (tab: "home" | "dashboard" | "classifier" | "encyclopedia" | "health" | "nutrition" | "milk" | "market" | "forum") => void;
+  onNavigate: (tab: TabId) => void;
 }
 
 export function Footer({ onNavigate }: FooterProps) {

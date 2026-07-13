@@ -1,4 +1,4 @@
-// Prisma schema for PashuMitra bovine management platform
+// Prisma schema for PashuMitra — now with User, RBAC, Tickets, Vaccination Requests
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,29 +8,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Cattle/buffalo profile registered by a farmer
+// ─── Auth & RBAC ───────────────────────────────────────────────
+enum Role {
+  FARMER
+  VET
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(FARMER)
+  phone        String?
+  location     String?
+  avatarUrl    String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cattle              Cattle[]
+  milkLogs            MilkLog[]
+  healthRecords       HealthRecord[]
+  tickets             Ticket[]              @relation("TicketAuthor")
+  ticketReplies       TicketReply[]
+  vaccinationRequests VaccinationRequest[]  @relation("RequestAuthor")
+  reviewedRequests    VaccinationRequest[]  @relation("RequestReviewer")
+  notifications       Notification[]
+}
+
+// ─── Cattle (now owned by a user) ──────────────────────────────
 model Cattle {
   id            String   @id @default(cuid())
-  tagNumber     String   @unique
+  ownerId       String
+  tagNumber     String
   name          String
   breed         String
-  species       String // "cattle" or "buffalo"
-  sex           String // "male" | "female"
+  species       String
+  sex           String
   birthDate     DateTime
   weightKg      Float
-  source        String? // purchased, born on farm, etc.
+  source        String?
   notes         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  milkLogs      MilkLog[]
-  healthRecords HealthRecord[]
+  owner               User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  milkLogs            MilkLog[]
+  healthRecords       HealthRecord[]
+  vaccinationRequests VaccinationRequest[]
+
+  @@unique([ownerId, tagNumber])
+  @@index([ownerId])
 }
 
-// Daily milk production log
 model MilkLog {
   id           String   @id @default(cuid())
   cattleId     String
+  recordedById String?
   date         DateTime
   morningKg    Float
   eveningKg    Float
@@ -39,32 +75,134 @@ model MilkLog {
   notes        String?
   createdAt    DateTime @default(now())
 
-  cattle       Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+  cattle    Cattle @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation(fields: [recordedById], references: [id], onDelete: SetNull)
 
   @@index([cattleId, date])
 }
 
-// Health event record (vaccination, treatment, calving, AI, etc.)
 model HealthRecord {
   id          String   @id @default(cuid())
   cattleId    String
+  recordedById String?
   date        DateTime
-  type        String // vaccination, treatment, ai, calving, deworming, etc.
+  type        String
   event       String
   description String?
   cost        Float?
   createdAt   DateTime @default(now())
 
-  cattle      Cattle   @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+  cattle    Cattle @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation(fields: [recordedById], references: [id], onDelete: SetNull)
 
   @@index([cattleId, date])
 }
 
-// Community forum thread
+// ─── Problem / Ticket system ───────────────────────────────────
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Ticket {
+  id          String         @id @default(cuid())
+  authorId    String
+  title       String
+  body        String
+  category    String         @default("general") // general, health, nutrition, breeding, market, other
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+  breedTag    String?
+  cattleTag   String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  author  User           @relation("TicketAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  replies TicketReply[]
+
+  @@index([authorId])
+  @@index([status])
+}
+
+model TicketReply {
+  id        String   @id @default(cuid())
+  ticketId  String
+  authorId  String
+  body      String
+  internal  Boolean  @default(false) // internal notes for vet/admin only
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+// ─── Vaccination approval workflow ─────────────────────────────
+enum VaccinationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model VaccinationRequest {
+  id             String            @id @default(cuid())
+  requesterId    String
+  cattleId       String
+  vaccineName    String
+  requestedDate  DateTime
+  preferredTime  String?
+  notes          String?
+  status         VaccinationStatus @default(PENDING)
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  scheduledDate  DateTime?
+  vetAssigned    String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  requester  User   @relation("RequestAuthor", fields: [requesterId], references: [id], onDelete: Cascade)
+  reviewer  User?  @relation("RequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  cattle    Cattle @relation(fields: [cattleId], references: [id], onDelete: Cascade)
+
+  @@index([requesterId])
+  @@index([status])
+}
+
+// ─── Notifications ─────────────────────────────────────────────
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // ticket_reply, vaccination_approved, vaccination_rejected, etc.
+  title     String
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+// ─── Forum (existing, unchanged) ───────────────────────────────
 model ForumPost {
   id         String   @id @default(cuid())
   authorName String
-  authorRole String // farmer, vet, expert, etc.
+  authorRole String
   topic      String
   breedTag   String?
   body       String
@@ -72,7 +210,7 @@ model ForumPost {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  replies    ForumReply[]
+  replies ForumReply[]
 }
 
 model ForumReply {
@@ -83,7 +221,7 @@ model ForumReply {
   body       String
   createdAt  DateTime @default(now())
 
-  post       ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
 }
